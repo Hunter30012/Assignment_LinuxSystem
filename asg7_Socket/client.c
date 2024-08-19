@@ -8,7 +8,7 @@
 
 #define BUFFER_MAX 128
 uint16_t default_port_no = 5000;
-const char *default_ip_addr = "127.0.0.1";
+const char *default_ip_addr = "127.0.0.2";
 
 void setup_tcp_communication() 
 {
@@ -20,7 +20,7 @@ void setup_tcp_communication()
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if(sockfd == -1) {
-        printf("Error to create socket\n");
+        perror("socket");
         exit(EXIT_FAILURE);
     }
     // init infomation of server
@@ -28,7 +28,7 @@ void setup_tcp_communication()
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(default_port_no);
     if(inet_pton(AF_INET, default_ip_addr, &server_addr.sin_addr) == -1) {
-        printf("Error in inet_pton\n");
+        perror("inet_pton");
         exit(EXIT_FAILURE);
     }
     // connect to server
@@ -36,26 +36,34 @@ void setup_tcp_communication()
     if(ret == 0) {
         printf("Connected\n");
     } else {
-        printf("Failed to connect\n");
+        perror("connect");
         exit(EXIT_FAILURE);
     }
+    // communicate with server
     while (1) {
         memset(buffer, 0, sizeof(buffer));
         printf("Input data send to server: ");
         fflush(stdin);
         scanf("%s", buffer);
+        printf("%s\n", buffer);
 
-        /* send the data to server*/
-        sent_recv_bytes = sendto(sockfd, buffer, strlen(buffer) + 1, 0, (struct sockaddr*)&server_addr, sizeof(struct sockaddr));
+        // send the data to server 
+        if((sent_recv_bytes = sendto(sockfd, buffer, strlen(buffer) + 1, 0, (struct sockaddr*)&server_addr, sizeof(struct sockaddr))) < 0) {
+            perror("sendto");
+            exit(EXIT_FAILURE);
+        }
+        if(strcmp(buffer, "exit") == 0) {
+            break;
+        }
         printf("No of bytes sent = %d\n", sent_recv_bytes);
     
-        /* Client also want to reply from server after sending data*/
+        // Client also want to reply from server after sending data
         printf("Waiting for response:\n");
         sent_recv_bytes =  recvfrom(sockfd, recv_buff, BUFFER_MAX, 0, (struct sockaddr*)&server_addr, &addr_len);
         printf("No of bytes recvd = %d\n", sent_recv_bytes);
-        printf("Buffer from server: %s", recv_buff);      
-    } 
-
+        printf("Buffer from server: %s\n", recv_buff);      
+    }
+    close(sockfd);
 }
 
 int main()
