@@ -8,15 +8,17 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <errno.h>
 #include <unistd.h>
 #include "get_info.h"
 #include "speed_test.h"
+
 
 #define DEFAULT_NUM_THREAD 3
 
 
 #define THREAD_NUMBER 4
-#define SPEEDTEST_DURATION 15
+#define SPEEDTEST_DURATION 10
 
 #define UL_BUFFER_SIZE 8192
 #define UL_BUFFER_TIMES 10240
@@ -44,6 +46,9 @@ thread_t thread[THREAD_NUMBER];
 
 int _debug_ = 0;
 
+uint16_t default_port_no = 4000;
+const char *default_ip_addr = "10.46.172.69";
+
 void stop_all_thread(int signo) {
     if(signo == SIGALRM) {
         thread_all_stop=1;
@@ -66,15 +71,15 @@ float get_uptime(void) {
 void *calculate_ul_speed_thread() {
     double ul_speed=0.0, duration=0;
     while(1) {
-        stop_ul_time = get_uptime();
-        duration = stop_ul_time-start_ul_time;
-        //ul_speed = (double)total_ul_size/1024/1024/duration*8;
-        ul_speed = (double)total_ul_size/1000/1000/duration*8;
-        if(duration>0) {
-            printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\bUpload speed: %0.2lf Mbps", ul_speed);
-            fflush(stdout);
-        }
-        usleep(500000);
+        // stop_ul_time = get_uptime();
+        // duration = stop_ul_time-start_ul_time;
+        // //ul_speed = (double)total_ul_size/1024/1024/duration*8;
+        // ul_speed = (double)total_ul_size/1000/1000/duration*8;
+        // if(duration>0) {
+        //     printf("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\bUpload speed: %0.2lf Mbps", ul_speed);
+        //     fflush(stdout);
+        // }
+        // usleep(500000);
 
         if(thread_all_stop) {
             stop_ul_time = get_uptime();
@@ -218,20 +223,23 @@ int speedtest_download(server_data_t *nearest_server) {
                 pthread_create(&thread[i].tid, NULL, download_thread, &thread[i]);
             }
         }
-        if(thread_all_stop)
+        if(thread_all_stop) 
             break;
     }
     return 1;
 }
 
-void *upload_thread(void *arg) {
+void *upload_thread(void *arg) 
+{
     int fd;
     char data[UL_BUFFER_SIZE], sbuf[512];
     uint32_t i, j, size=0;
     struct timeval tv;
     fd_set fdSet;
+    size_t remaining = sizeof(data);
+    size_t total_sent = 0;
 
-    thread_t *t_arg = arg;
+    thread_t *t_arg = (thread_t *)arg;
     i = t_arg->thread_index;
 
     memset(data, 0, sizeof(char) * UL_BUFFER_SIZE);
@@ -240,17 +248,16 @@ void *upload_thread(void *arg) {
         perror("Open socket error!\n");
         goto err;
     }
-
     if(connect(fd, (struct sockaddr *)&thread[i].servinfo, sizeof(struct sockaddr)) == -1) {
         printf("Socket connect error!\n");
         goto err;
     }
-
+    printf("Request url: %s, domain name: %s, size: %ld\n", t_arg->request_url, t_arg->domain_name, sizeof(data)*UL_BUFFER_TIMES);
     sprintf(sbuf,
             "POST /%s HTTP/1.0\r\n"
             "Content-type: application/x-www-form-urlencoded\r\n"
             "Host: %s\r\n"
-            "Content-Length: %ld\r\n\r\n", thread[i].request_url, thread[i].domain_name, sizeof(data)*UL_BUFFER_TIMES);
+            "Content-Length: %ld\r\n\r\n", t_arg->request_url, t_arg->domain_name, sizeof(data)*UL_BUFFER_TIMES);
 
     if((size=send(fd, sbuf, strlen(sbuf), 0)) != strlen(sbuf)) {
         printf("Can't send header to server\n");
@@ -258,22 +265,34 @@ void *upload_thread(void *arg) {
     }
 
     pthread_mutex_lock(&pthread_mutex);
-    total_ul_size+=size;
+    total_ul_size = total_ul_size + size;
     pthread_mutex_unlock(&pthread_mutex);
 
     for(j=0; j<UL_BUFFER_TIMES; j++) {
         // if((size=send(fd, data, sizeof(data), 0)) != sizeof(data)) {
-        //     // printf("Can't send data to server\n");
-        //     // goto err;
+        //     printf("Can't send data to server\n");
+        //     goto err;
         // }
-        size = send(fd, data, sizeof(data), 0);
+        printf("Buffer times\n");
+        remaining = sizeof(data);
+        total_sent = 0;
+        while (remaining > 0) {
+            ssize_t sent = send(fd, data + total_sent, remaining, 0);
+            if (sent <= 0) {
+                perror("Can't send data to server");
+                goto err;
+            }
+            total_sent += sent;
+            remaining -= sent;
+        }
+
         pthread_mutex_lock(&pthread_mutex);
-        total_ul_size+=size;
+        total_ul_size = total_ul_size + total_sent;
         pthread_mutex_unlock(&pthread_mutex);
         if(thread_all_stop)
             goto err;
     }
-
+    LOG("Out of for()\n");
     while(1) {
         FD_ZERO(&fdSet);
         FD_SET(fd, &fdSet);
@@ -294,20 +313,72 @@ void *upload_thread(void *arg) {
     }
 err: 
     if(fd) close(fd);
-    thread[i].running=0;
+    t_arg->running = 0;
     return NULL;
 }
 
+#if 0
+void *setup_tcp_communication(void *arg) 
+{
+    char buffer[UL_BUFFER_SIZE];
+    int sockfd = 0;
+    struct sockaddr_in server_addr;
+    int ret, sent_recv_bytes = 0;
+    socklen_t addr_len = sizeof(struct sockaddr);
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+    // init infomation of server
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(default_port_no);
+    if(inet_pton(AF_INET, default_ip_addr, &server_addr.sin_addr) == -1) {
+        perror("inet_pton");
+        exit(EXIT_FAILURE);
+    }
+    // connect to server
+    ret = connect(sockfd, (struct sockaddr*)&server_addr, addr_len);
+    if(ret == 0) {
+        printf("Connected\n");
+    } else {
+        perror("connect");
+        exit(EXIT_FAILURE);
+    }
+    // communicate with server
+    size_t total_sent = 0, remaining = sizeof(buffer);
+
+    while (1) {
+        total_sent = 0;
+        remaining = sizeof(buffer);
+        while (remaining > 0) {
+            ssize_t sent = send(sockfd, buffer + total_sent, remaining, 0);
+            if (sent < 0) {
+                perror("Can't send data to server");
+            }
+            total_sent += sent;
+            remaining -= sent;
+        }
+        pthread_mutex_lock(&pthread_mutex);
+        total_ul_size = total_ul_size + total_sent;
+        pthread_mutex_unlock(&pthread_mutex);
+
+    }
+    close(sockfd);
+}
+#endif
 int speedtest_upload(server_data_t *nearest_server) {
     int i;
     char dummy[128]={0}, request_url[128]={0};
     sscanf(nearest_server->url, "http://%[^/]/%s", dummy, request_url);
-
+    memset(&thread, 0, THREAD_NUMBER * sizeof(thread_t));
     start_ul_time = get_uptime();
     while(1) {
         for(i=0; i<THREAD_NUMBER; i++) {
             memcpy(&thread[i].servinfo, &nearest_server->servinfo, sizeof(struct sockaddr_in));
-            memcpy(&thread[i].domain_name, &nearest_server->domain_name, sizeof(nearest_server->domain_name));
+            memcpy(&thread[i].domain_name, "speedtest.vnanet.vn", sizeof(nearest_server->domain_name));
             memcpy(&thread[i].request_url, request_url, sizeof(request_url));
             if(thread[i].running == 0) {
                 thread[i].thread_index = i;
@@ -375,33 +446,35 @@ int main(int argc, char **argv)
         printf("Distance: %lf (km)\n", list_servers[best_server_index].distance);
         printf("Latency: %d (us)\n", list_servers[best_server_index].latency);
         printf("===============================================\n");
-
-        //Set speed test timer
         signal(SIGALRM, stop_all_thread);
-        timerVal.it_value.tv_sec = SPEEDTEST_DURATION;
-        timerVal.it_value.tv_usec = 0;
-        setitimer(ITIMER_REAL, &timerVal, NULL);
+        thread_all_stop = 0;
+        if(argc == 2) {
+            if(strcmp(argv[1], "--upload") ==0) {
+                printf("\n");
+                timerVal.it_value.tv_sec = SPEEDTEST_DURATION;
+                timerVal.it_value.tv_usec = 0;
+                setitimer(ITIMER_REAL, &timerVal, NULL);
 
-        // for download
-        pthread_create(&pid, NULL, calculate_dl_speed_thread, NULL);
-        speedtest_download(&list_servers[best_server_index]);
+                pthread_create(&pid, NULL, calculate_ul_speed_thread, NULL);
+                speedtest_upload(&list_servers[best_server_index]);
+                pthread_join(pid, NULL);
+            }
+        }
+        if(argc == 2) {
+            if(strcmp(argv[1], "--download") ==0) {
+                printf("\n");
+                timerVal.it_value.tv_sec = SPEEDTEST_DURATION;
+                timerVal.it_value.tv_usec = 0;
+                setitimer(ITIMER_REAL, &timerVal, NULL);
 
-        sleep(2);
-        printf("\n");
-        thread_all_stop=0;
-        setitimer(ITIMER_REAL, &timerVal, NULL);
-
-        // for upload
-        pthread_create(&pid, NULL, calculate_ul_speed_thread, NULL);
-        speedtest_upload(&list_servers[best_server_index]);
-        printf("\n");
-
+                pthread_create(&pid, NULL, calculate_dl_speed_thread, NULL);
+                speedtest_download(&list_servers[best_server_index]);
+                pthread_join(pid, NULL);                
+            }
+        }
+        printf("\n\n");
     }
-
-    while (1)
-    {
-        /* code */
-    }
+    
 
     return 0;
 }

@@ -254,7 +254,7 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
 
         if(get_ipv4_addr(nearest_servers[i].domain_name, &servinfo)) {
             memcpy(&nearest_servers[i].servinfo, &servinfo, sizeof(struct sockaddr_in));
-
+            LOG("get IP successfully\n");
             //Get latency time
             nearest_servers[i].servinfo.sin_port = htons(8080); // hardcode with port 8080
 

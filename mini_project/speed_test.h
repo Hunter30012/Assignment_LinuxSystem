@@ -8,7 +8,6 @@
 #define SERVERS_LOCATION_REQUEST_URL "speedtest-servers-static.php?" // reuest url: GET ... => servers list info
 
 #define THREAD_NUMBER 4
-#define SPEEDTEST_DURATION 15
 
 
 
