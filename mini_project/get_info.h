@@ -12,6 +12,8 @@
             do { if (DEBUG) printf(fmt); } while (0)
 #define FILE_DIRECTORY_PATH "/tmp/"
 
+#define NEAREST_SERVERS_NUM 5
+
 typedef struct _client_data {
     char ipAddr[128];
     double latitude;

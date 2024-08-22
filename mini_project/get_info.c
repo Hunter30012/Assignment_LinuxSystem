@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <math.h>
-#include "speed_test.h"
+#include "macro_sp.h"
 
 
 
@@ -256,7 +256,7 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
             memcpy(&nearest_servers[i].servinfo, &servinfo, sizeof(struct sockaddr_in));
             LOG("get IP successfully\n");
             //Get latency time
-            nearest_servers[i].servinfo.sin_port = htons(8080); // hardcode with port 8080
+            // nearest_servers[i].servinfo.sin_port = htons(8080); // hardcode with port 8080
 
             gettimeofday(&tv1, NULL);
             get_http_file(&nearest_servers[i].servinfo, nearest_servers[i].domain_name, latency_request_url, latency_name);
