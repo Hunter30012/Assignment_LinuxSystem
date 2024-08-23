@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 
     memset(list_servers, 0, sizeof(server_data_t) * NEAREST_SERVERS_NUM);
     if(get_nearest_server(client_data.latitude, client_data.longitude, list_servers, NEAREST_SERVERS_NUM)==0) {
-        printf("Can't get server list.\n"); 
+        printf("Can't get ip port server list.\n"); 
         return 0;
     }
 
