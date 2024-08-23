@@ -23,11 +23,12 @@ typedef struct thread {
     char domain_name[128];
     char request_url[128];
     struct sockaddr_in servinfo;
+    op_protocol_t protocol;
 } thread_t;
 
-void speed_test_download(server_data_t *best_server,server_data_t *list_server, const char *select_server, int num_thread);
+void speed_test_download(server_data_t *best_server, server_data_t *select_server, int num_thread, op_protocol_t protocol);
 
-void speed_test_upload(server_data_t *best_server,server_data_t *list_server, const char *select_server, int num_thread);
+void speed_test_upload(server_data_t *best_server, server_data_t *select_server, int num_thread, op_protocol_t protocol);
 
 
 #endif

@@ -33,15 +33,22 @@ typedef struct server_data {
     struct sockaddr_in servinfo;
 } server_data_t;
 
-int get_ipv4_addr(char *domain_name, struct sockaddr_in *servinfo);
+typedef enum {
+    HTTP_PROTOCOL = 1,
+    HTTPS_PROTOCOL
+} op_protocol_t;
 
-int get_http_file(struct sockaddr_in *serv, char *domain_name, char *request_url, char *filename);
+int get_ipv4_addr(char *domain_name, struct sockaddr_in *servinfo, op_protocol_t protocol);
+
+int get_http_https_file(struct sockaddr_in *serv, char *domain_name, char *request_url, char *filename);
 
 int get_ip_address_position(char *fileName, client_data_t *client_data);
 
 int get_nearest_server(double lat_c, double lon_c, server_data_t *nearest_servers, uint8_t num_server);
 
-int get_best_server(server_data_t *nearest_servers, uint8_t number_server);
+int get_best_server(server_data_t *nearest_servers, uint8_t number_server, op_protocol_t protocol);
+
+int get_server_use_domain(server_data_t *ret, const char *domain, op_protocol_t protocol);
 
 
 #endif

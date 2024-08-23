@@ -4,6 +4,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
+#include <openssl/ssl.h>
+
 #include <math.h>
 #include "macro_sp.h"
 
@@ -24,16 +26,22 @@ static double calcDistance(double lat1, double lon1, double lat2, double lon2) {
     return d;
 }
 
-int get_ipv4_addr(char *domain_name, struct sockaddr_in *servinfo) 
+int get_ipv4_addr(char *domain_name, struct sockaddr_in *servinfo,op_protocol_t protocol) 
 {
     struct addrinfo hints, *addrinfo, *p;
     int status;
-
+    
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-
-    if((status = getaddrinfo(domain_name, "http", &hints, &addrinfo)) != 0) {
+    char pro[10];
+    if(protocol == HTTP_PROTOCOL) {
+        sprintf(pro, "http");
+    }
+    else if(protocol == HTTPS_PROTOCOL) {
+        sprintf(pro, "https");
+    }
+    if((status = getaddrinfo(domain_name, pro, &hints, &addrinfo)) != 0) {
         printf("Resolve DNS Failed: Can't get ip address! (%s)\n", domain_name);
         return 0;
     }
@@ -48,7 +56,7 @@ int get_ipv4_addr(char *domain_name, struct sockaddr_in *servinfo)
     return 1;
 }
 
-int get_http_file(struct sockaddr_in *serv, char *domain_name, char *request_url, char *filename) {
+int get_http_https_file(struct sockaddr_in *serv, char *domain_name, char *request_url, char *filename) {
     int fd;
     char sbuf[256]={0}, tmp_path[128]={0};
     char rbuf[8192];
@@ -94,7 +102,7 @@ int get_http_file(struct sockaddr_in *serv, char *domain_name, char *request_url
         int i = recv(fd, rbuf, sizeof(rbuf), 0);
         if(status > 0 && FD_ISSET(fd, &fdSet)) {
             if(i < 0) {
-                printf("Can't get http file!\n");
+                printf("Can't get http/https file!\n");
                 close(fd);
                 fclose(fp);
                 return 0;
@@ -197,7 +205,7 @@ int get_nearest_server(double lat_c, double lon_c, server_data_t *nearest_server
         return 0;
 }
 
-int get_best_server(server_data_t *nearest_servers, uint8_t number_server) 
+int get_best_server(server_data_t *nearest_servers, uint8_t number_server, op_protocol_t protocol) 
 {
     FILE *fp=NULL;
     int i=0, latency, best_index=-1;
@@ -228,16 +236,25 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
                 strcat(latency_url[i], buf);
                 strcat(latency_url[i], "/");
             }
-
-            if(strstr(buf, "http:")) 
-                strcat(latency_url[i], "/");
+            if(protocol == HTTP_PROTOCOL) {
+                if(strstr(buf, "http:")) 
+                    strcat(latency_url[i], "/");
+            }
+            else if(protocol == HTTPS_PROTOCOL) {
+                if(strstr(buf, "https:")) 
+                    strcat(latency_url[i], "/");
+            }
 
             ptr = strtok(NULL, "/");
         }
 
         //Get domain name
         DEBUG_PRINT("\nBefore: %s\n", latency_url[i]);
-        sscanf(latency_url[i], "http://%[^:]", nearest_servers[i].domain_name);
+        if(protocol == HTTP_PROTOCOL) 
+            sscanf(latency_url[i], "http://%[^:]", nearest_servers[i].domain_name);
+        else if(protocol == HTTPS_PROTOCOL) {
+            sscanf(latency_url[i], "https://%[^:]", nearest_servers[i].domain_name);
+        }
         DEBUG_PRINT("Domain name: %s\n", nearest_servers[i].domain_name);
         //Get request url
         char temp[128];
@@ -252,14 +269,14 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
         DEBUG_PRINT("latancy requset url: %s\n", latency_request_url);
         DEBUG_PRINT("latancy name: %s\n", latency_name);
 
-        if(get_ipv4_addr(nearest_servers[i].domain_name, &servinfo)) {
+        if(get_ipv4_addr(nearest_servers[i].domain_name, &servinfo, protocol)) {
             memcpy(&nearest_servers[i].servinfo, &servinfo, sizeof(struct sockaddr_in));
             LOG("get IP successfully\n");
             //Get latency time
             // nearest_servers[i].servinfo.sin_port = htons(8080); // hardcode with port 8080
 
             gettimeofday(&tv1, NULL);
-            get_http_file(&nearest_servers[i].servinfo, nearest_servers[i].domain_name, latency_request_url, latency_name);
+            get_http_https_file(&nearest_servers[i].servinfo, nearest_servers[i].domain_name, latency_request_url, latency_name);
             gettimeofday(&tv2, NULL);
         }
 
@@ -284,6 +301,11 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
             best_index = i;
             latency = nearest_servers[i].latency;
         } else {
+            if(latency == -1 && nearest_servers[i].latency != -1) {
+                best_index = i;
+                latency = nearest_servers[i].latency;
+                continue;
+            }
             if(nearest_servers[i].latency < latency && nearest_servers[i].latency != -1) {
                 best_index = i;
                 latency = nearest_servers[i].latency;
@@ -291,4 +313,16 @@ int get_best_server(server_data_t *nearest_servers, uint8_t number_server)
         }
     }
     return best_index;
+}
+
+int get_server_use_domain(server_data_t *ret, const char *domain, op_protocol_t protocol)
+{
+    memset(ret, 0, sizeof(server_data_t));
+    if(get_ipv4_addr(domain, &ret->servinfo, protocol) == 0) {
+        printf("Failed to get ipv4 address\n");
+        return 0;
+    }
+    sprintf(&ret->url, "http://%s:8080/speedtest/upload.php", domain);
+    memcpy(ret->domain_name, domain, sizeof(ret->domain_name));
+    return 1;
 }

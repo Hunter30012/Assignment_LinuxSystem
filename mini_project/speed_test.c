@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <openssl/ssl.h>
 #include "get_info.h"
 #include "speed_test.h"
 
@@ -144,7 +145,7 @@ void *download_thread(void *arg)
             }
 
             if(thread_all_stop) {
-                printf("Thread terminate\n");
+                // printf("Thread terminate\n");
                 break;
             }
         }   
@@ -156,15 +157,18 @@ err:
     return NULL;
 }
 
-int speedtest_download(server_data_t *nearest_server, int num_thread) 
+int speedtest_download(server_data_t *nearest_server, int num_thread, op_protocol_t protocol) 
 {
     thread_t *thread;
     const char download_filename[64]="random3500x3500.jpg";  //23MB
     char url[128]={0}, request_url[128]={0}, dummy[128]={0}, buf[128];
     char *ptr=NULL;
     int i;
+    if(protocol == HTTP_PROTOCOL)
+        sscanf(nearest_server->url, "http://%[^/]/%s", dummy, request_url);
+    else if(protocol == HTTPS_PROTOCOL)
+        sscanf(nearest_server->url, "https://%[^/]/%s", dummy, request_url);
 
-    sscanf(nearest_server->url, "http://%[^/]/%s", dummy, request_url);
     strncpy(url, request_url, sizeof(request_url));
     memset(request_url, 0, sizeof(request_url));
 
@@ -190,6 +194,7 @@ int speedtest_download(server_data_t *nearest_server, int num_thread)
             memcpy(&thread[i].servinfo, &nearest_server->servinfo, sizeof(struct sockaddr_in));
             memcpy(&thread[i].domain_name, &nearest_server->domain_name, sizeof(nearest_server->domain_name));
             memcpy(&thread[i].request_url, request_url, sizeof(request_url));
+            thread->protocol = protocol;
             if(thread[i].running == 0) {
                 thread[i].thread_index = i;
                 thread[i].running = 1;
@@ -197,7 +202,7 @@ int speedtest_download(server_data_t *nearest_server, int num_thread)
             }
         }
         if(thread_all_stop) {
-            free(thread);
+            // free(thread);
             break;
         }
     }
@@ -271,7 +276,7 @@ void *upload_thread(void *arg)
 
         tv.tv_sec = 3;
         tv.tv_usec = 0;
-        int status = select(fd + 1, &fdSet, NULL, NULL, &tv);                                                         
+        int status = select(fd + 1, &fdSet, NULL, NULL, &tv);    
 
         int recv_byte = recv(fd, sbuf, sizeof(sbuf), 0);
         if(status > 0 && FD_ISSET(fd, &fdSet)) {
@@ -284,7 +289,7 @@ void *upload_thread(void *arg)
         }   
     }
 err: 
-    printf("Thread terminate\n");
+    // printf("Thread terminate\n");
     if(fd) close(fd);
     t_arg->running = 0;
     return NULL;
@@ -342,12 +347,15 @@ void *setup_tcp_communication(void *arg)
     close(sockfd);
 }
 #endif
-int speedtest_upload(server_data_t *nearest_server, int num_thread) 
+int speedtest_upload(server_data_t *nearest_server, int num_thread, op_protocol_t protocol) 
 {
     thread_t *thread;
     int i;
     char dummy[128]={0}, request_url[128]={0};
-    sscanf(nearest_server->url, "http://%[^/]/%s", dummy, request_url);
+    if(protocol == HTTP_PROTOCOL)
+        sscanf(nearest_server->url, "http://%[^/]/%s", dummy, request_url);
+    else if(protocol == HTTPS_PROTOCOL)
+        sscanf(nearest_server->url, "https://%[^/]/%s", dummy, request_url);
     thread = (thread_t *)calloc(num_thread, sizeof(thread_t));
     memset(thread, 0, num_thread * sizeof(thread_t));
     start_ul_time = get_uptime();
@@ -356,6 +364,7 @@ int speedtest_upload(server_data_t *nearest_server, int num_thread)
             memcpy(&thread[i].servinfo, &nearest_server->servinfo, sizeof(struct sockaddr_in));
             memcpy(&thread[i].domain_name, nearest_server->domain_name, sizeof(nearest_server->domain_name));
             memcpy(&thread[i].request_url, request_url, sizeof(request_url));
+            thread->protocol = protocol;
             if(thread[i].running == 0) {
                 thread[i].thread_index = i;
                 thread[i].running = 1;
@@ -364,14 +373,14 @@ int speedtest_upload(server_data_t *nearest_server, int num_thread)
         }
         if(thread_all_stop)
         {
-            free(thread);
+            // free(thread);
             break;
         }
     }
     return 1;
 }
 
-void speed_test_download(server_data_t *best_server, server_data_t *list_server, const char *select_server, int num_thread)
+void speed_test_download(server_data_t *best_server, server_data_t *select_server, int num_thread, op_protocol_t protocol)
 {
     struct itimerval timerVal;
     pthread_t thread_cal;
@@ -385,14 +394,14 @@ void speed_test_download(server_data_t *best_server, server_data_t *list_server,
 
     pthread_create(&thread_cal, NULL, calculate_dl_speed_thread, NULL);
     if(select_server == NULL) {
-        speedtest_download(best_server, num_thread);
+        speedtest_download(best_server, num_thread, protocol);
     } else {
-        // select
+        speedtest_download(select_server, num_thread, protocol);
     }
     // pthread_join(thread_cal, NULL);    
 }
 
-void speed_test_upload(server_data_t *best_server, server_data_t *list_server, const char *select_server, int num_thread)
+void speed_test_upload(server_data_t *best_server, server_data_t *select_server, int num_thread, op_protocol_t protocol)
 {
     struct itimerval timerVal;
     pthread_t thread_cal;
@@ -406,9 +415,9 @@ void speed_test_upload(server_data_t *best_server, server_data_t *list_server, c
 
     pthread_create(&thread_cal, NULL, calculate_ul_speed_thread, NULL);
     if(select_server == NULL) {
-        speedtest_upload(best_server, num_thread);
+        speedtest_upload(best_server, num_thread, protocol);
     } else {
-        // select
+        speedtest_upload(select_server, num_thread, protocol);
     }
     // pthread_join(thread_cal, NULL);
 }

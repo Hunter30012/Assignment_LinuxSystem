@@ -3,7 +3,7 @@ CFLAGS=-g -c -Wall
 TARGET=run
 
 ${TARGET}: main.o get_info.o speed_test.o
-	${CC} main.o get_info.o speed_test.o -o ${TARGET} -lpthread -lm 
+	${CC} main.o get_info.o speed_test.o -o ${TARGET} -lpthread -lm -lssl
 get_info.o: get_info.c
 	${CC} ${CFLAGS} get_info.c -o get_info.o
 speed_test.o: speed_test.c
